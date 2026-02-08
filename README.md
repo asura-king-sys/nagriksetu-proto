@@ -1,7 +1,9 @@
 🚀 NagrikSetu: Civic Issue Reporting System
+
 NagrikSetu is a web-based platform designed for reporting local civic issues. Users can pinpoint an issue on an interactive map, provide a category, and upload a photo for verification.
 
 🛠 Tech Stack
+
 Frontend
 React.js: A library for building a dynamic user interface.
 
@@ -20,6 +22,8 @@ CORS: Ensures the frontend can communicate with the backend server securely.
 
 PostgreSQL: The database used for storing report data (Category, Lat, Lng, Image Path).
 
+Dotenv: Used to manage environment variables safely.
+
 🧩 Key Extensions & Logic
 ES Modules ("type": "module"): Used in the backend to maintain consistency with modern JavaScript syntax.
 
@@ -27,82 +31,59 @@ Image Removal Logic: Allows users to clear or replace a captured photo before su
 
 Map Invalidation: A custom MapFixer component ensures the Leaflet map renders correctly without grey tiles on load.
 
-⚙️ How to Run Locally
-1. Clone the Repository
-Bash :
-git clone https://github.com/YOUR_USERNAME/nagriksetu.git
-cd nagriksetu
-2. Start the Backend Server
-Navigate to the backend folder: cd nagriksetu-backend
-
-Install dependencies: npm install
-
-Folder Setup: Ensure a folder named uploads exists in this directory (it is ignored by Git).
-
-Run the server: node index.js
-
-The server will start at: http://localhost:5000
-
-3. Start the Frontend App
-Open a second terminal and stay in the root/frontend directory.
-
-Install dependencies: npm install
-
-Config: Ensure BACKEND_URL in App.jsx is set to "http://localhost:5000".
-
-Launch the app: npm run dev
-
-Open your browser to the URL provided (usually http://localhost:5173).
-
 🐘 PostgreSQL Setup
-To store the reports, you must have PostgreSQL installed and running on your laptop.
+Install PostgreSQL: Download and install the latest version from postgresql.org.
 
-1. Download & Install
-Download: Get the installer for Windows/Mac from the Official PostgreSQL Site.
+Setup Database:
 
-Installation: Follow the wizard. Important: Remember the password you set for the postgres user.
+Open pgAdmin 4 or your SQL terminal.
 
-Tool: The installer includes pgAdmin 4, a visual tool to manage your database.
+Create a new database named nagriksetu.
 
-2. Create the Database
-Open pgAdmin 4 or use the terminal (psql).
+Navigate to the nagriksetu-backend folder in this repository.
 
-Create a new database named nagriksetu:
+Open the file named db.sql.
 
-SQL
-CREATE DATABASE nagriksetu;
-Connect to the database and create the tickets table:
+Copy and execute the queries inside that file to create the tickets table.
 
-SQL
-CREATE TABLE tickets (
-    id SERIAL PRIMARY KEY,
-    category VARCHAR(50),
-    description TEXT,
-    lat DOUBLE PRECISION,
-    lng DOUBLE PRECISION,
-    image_path TEXT,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-3. Connect the Backend
-In your nagriksetu-backend folder, ensure you have a .env file (or update your index.js) with your credentials:
+🔐 Environment Variables (.env)
+To keep your database credentials secure, create a file named .env inside the nagriksetu-backend directory and add the following:
 
 
 DB_USER=postgres
-DB_PASSWORD=YOUR_PASSWORD_HERE
+DB_PASSWORD=your_password_here
 DB_HOST=localhost
 DB_PORT=5432
 DB_NAME=nagriksetu
-How to add this in VS Code:
-Open your README.md.
+PORT=5000
+Note: Replace your_password_here with the actual password you set during PostgreSQL installation.
 
-Find the "How to Run Locally" section.
+⚙️ How to Run Locally (Laptop Only)
+1. Clone the Repository
+git clone https://github.com/YOUR_USERNAME/nagriksetu.git
+cd nagriksetu
+2. Start the Backend Server
+Navigate to the backend folder:
 
-Paste these PostgreSQL instructions above the "Start the Backend Server" step.
+cd nagriksetu-backend
+Install dependencies:
 
-Final Git Sync:
-Once you've saved the changes in VS Code, run these to update your GitHub:
+npm install
+Setup .env: Create the .env file as described in the section above.
 
-Bash :
-git add README.md
-git commit -m "docs: add PostgreSQL installation and setup guide"
-git push origin main
+Folder Setup: Ensure a folder named uploads exists in this directory (it is ignored by Git).
+
+Run the server:
+
+node index.js
+3. Start the Frontend App
+Open a second terminal and stay in the root/frontend directory.
+
+Install dependencies:
+
+npm install
+Config: Ensure BACKEND_URL in App.jsx is set to "http://localhost:5000".
+
+Launch the app:
+
+npm run dev
