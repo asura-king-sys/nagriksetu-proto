@@ -16,57 +16,58 @@ let DefaultIcon = L.icon({
 });
 L.Marker.prototype.options.icon = DefaultIcon;
 
-// --- CRITICAL: Fixes Grey Map by forcing a redraw ---
+// Handles moving map to searched location
+function SearchHandler({ coords }) {
+  const map = useMap();
+  useEffect(() => {
+    if (coords) {
+      map.flyTo([coords.lat, coords.lon], 16, { animate: true });
+    }
+  }, [coords, map]);
+  return null;
+}
+
 function MapFixer() {
   const map = useMap();
   useEffect(() => {
-    const timer = setTimeout(() => {
-      map.invalidateSize();
-    }, 500);
-    return () => clearTimeout(timer);
+    setTimeout(() => { map.invalidateSize(); }, 500);
   }, [map]);
   return null;
 }
 
-function MapController({ onMoveStart, onMoveEnd, setUserLoc }) {
-  const map = useMap();
+function MapController({ onMoveStart, onMoveEnd }) {
   useMapEvents({
     movestart: () => onMoveStart(),
     moveend: (e) => {
       const center = e.target.getCenter();
       onMoveEnd(center.lat, center.lng);
-      map.invalidateSize(); 
-    },
-    locationfound: (e) => {
-      setUserLoc([e.latlng.lat, e.latlng.lng]);
-      map.flyTo(e.latlng, 17);
     }
   });
   return null;
 }
 
 function App() {
-  const [tickets, setTickets] = useState([]);
   const [category, setCategory] = useState('Pothole');
   const [image, setImage] = useState(null);
-  const [address, setAddress] = useState("Move map to pinpoint location...");
+  const [address, setAddress] = useState("Pinpoint a location...");
   const [loading, setLoading] = useState(false);
-  const [userLoc, setUserLoc] = useState(null);
-  const [searchQuery, setSearchQuery] = useState("");
+  const [allReports, setAllReports] = useState([]);
+  const [searchQuery, setSearchQuery] = useState(""); 
+  const [searchCoords, setSearchCoords] = useState(null);
   const mapRef = useRef(null);
 
-  const BACKEND_URL = "http://localhost:5000";
+  const BACKEND_URL = "http://localhost:5000"; 
+
+  const fetchReports = async () => {
+    try {
+      const res = await axios.get(`${BACKEND_URL}/api/reports`);
+      setAllReports(res.data);
+    } catch (err) { console.error("Could not load reports"); }
+  };
 
   useEffect(() => {
-    fetchTickets();
+    fetchReports();
   }, []);
-
-  const fetchTickets = async () => {
-    try {
-      const res = await axios.get(`${BACKEND_URL}/api/tickets`);
-      setTickets(res.data);
-    } catch (err) { console.error(err); }
-  };
 
   const fetchAddress = async (lat, lng) => {
     setLoading(true);
@@ -77,41 +78,58 @@ function App() {
     finally { setLoading(false); }
   };
 
-  const handleSearch = async (e) => {
-    e.preventDefault();
-    if (!searchQuery.trim()) return;
-    try {
-      const res = await axios.get(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(searchQuery)}`);
-      if (res.data.length > 0) {
-        const { lat, lon } = res.data[0];
-        mapRef.current.flyTo([lat, lon], 16);
-        fetchAddress(lat, lon);
-      }
-    } catch (err) { console.error(err); }
+  const handleLocationSearch = async (e) => {
+    if (e.key === 'Enter' && searchQuery.trim() !== "") {
+      try {
+        const res = await axios.get(`https://nominatim.openstreetmap.org/search?format=json&q=${searchQuery}`);
+        if (res.data.length > 0) {
+          const { lat, lon } = res.data[0];
+          setSearchCoords({ lat, lon });
+        } else {
+          alert("Location not found!");
+        }
+      } catch (err) { console.error("Search failed", err); }
+    }
   };
 
   const handleReport = async () => {
-    if (!image) return alert("Capture a photo first!");
+    if (!image) return alert("Please capture a photo!");
     const center = mapRef.current.getCenter();
+    
     try {
       const formData = new FormData();
       formData.append('category', category);
-      formData.append('description', `Address: ${address}`);
+      formData.append('description', address);
       formData.append('lat', center.lat);
       formData.append('lng', center.lng);
       formData.append('image', image);
+
       await axios.post(`${BACKEND_URL}/api/report`, formData);
-      alert("Submitted!");
+      alert("✅ Report Submitted!");
       setImage(null);
-      fetchTickets();
-    } catch (err) { alert("Failed."); }
+      fetchReports();
+    } catch (err) { alert("Submission failed"); }
   };
 
   return (
     <div className="app-container">
       <header className="app-header">
-        <h1>NagrikSetu</h1>
-        <p>Civic Issue Reporting System</p>
+        <div className="logo-section">
+          <h1>NagrikSetu</h1>
+          <span className="live-badge">LIVE PROTOTYPE</span>
+        </div>
+        <div className="search-section">
+          <div className="search-input-wrapper">
+            <input 
+              type="text" 
+              placeholder="Find an area (e.g. MP Nagar)..." 
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              onKeyDown={handleLocationSearch}
+            />
+            <kbd>Enter ↵</kbd>
+          </div>
+        </div>
       </header>
 
       <main className="main-content">
@@ -119,35 +137,69 @@ function App() {
           <MapContainer center={[23.2599, 77.4126]} zoom={15} ref={mapRef} className="main-map">
             <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
             <MapFixer />
-            <MapController onMoveStart={() => setLoading(true)} onMoveEnd={fetchAddress} setUserLoc={setUserLoc} />
+            <SearchHandler coords={searchCoords} />
+            <MapController onMoveStart={() => setLoading(true)} onMoveEnd={fetchAddress} />
+            
+            {allReports.map(report => (
+              <Marker key={report.id} position={[report.lat, report.lng]}>
+                <Popup>
+                  <div className="report-popup">
+                    <img src={`${BACKEND_URL}/uploads/${report.image_path}`} alt="issue" />
+                    <strong>{report.category}</strong>
+                    <p>Status: Pending</p>
+                  </div>
+                </Popup>
+              </Marker>
+            ))}
+
             <div className="map-center-target">🎯</div>
-            <button className="btn-locate" onClick={() => mapRef.current.locate()}>📍 Find Me</button>
           </MapContainer>
         </div>
 
         <aside className="side-panel">
-          <form className="search-box" onSubmit={handleSearch}>
-            <input type="text" placeholder="Search city..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
-            <button type="submit">🔍</button>
-          </form>
+          <section className="side-section">
+            <h3>📍 Current Location</h3>
+            <div className="address-box">{loading ? "Updating..." : address}</div>
+          </section>
 
-          <div className="address-card">
-            <strong>📍 Location:</strong>
-            {loading ? <div className="spinner"></div> : <p>{address}</p>}
-          </div>
-
-          <div className="form-group">
+          <section className="side-section report-form">
+            <h3>📝 Report Issue</h3>
             <select value={category} onChange={(e) => setCategory(e.target.value)}>
               <option value="Pothole">Pothole</option>
-              <option value="Garbage">Garbage</option>
-              <option value="Street Light">Street Light</option>
+              <option value="Garbage">Garbage Pile</option>
+              <option value="Street Light">Broken Street Light</option>
+              <option value="Water Leak">Water Leakage</option>
             </select>
-            <input type="file" accept="image/*" onChange={(e) => setImage(e.target.files[0])} id="cam" style={{display:'none'}} />
-            <button className="btn-photo" onClick={() => document.getElementById('cam').click()}>
-              {image ? "✅ Captured" : "📷 Take Photo"}
-            </button>
-            <button className="btn-submit" onClick={handleReport}>Submit Report</button>
-          </div>
+
+            <div className="photo-box">
+              <input type="file" accept="image/*" onChange={(e) => setImage(e.target.files[0])} id="cam" hidden />
+              {image ? (
+                <div className="preview-wrap">
+                  <img src={URL.createObjectURL(image)} alt="preview" />
+                  <button className="remove-btn" onClick={() => setImage(null)}>✕</button>
+                </div>
+              ) : (
+                <button className="btn-capture" onClick={() => document.getElementById('cam').click()}>📷 Capture Issue</button>
+              )}
+            </div>
+
+            <button className="btn-submit" onClick={handleReport} disabled={!image}>Submit Report</button>
+          </section>
+
+          <section className="side-section">
+            <h3>🗞 Recent Reports</h3>
+            <div className="activity-list">
+              {allReports.slice(0, 10).map(r => (
+                <div key={r.id} className="activity-item">
+                  <div className="item-info">
+                    <strong>{r.category}</strong>
+                    <small>{new Date(r.created_at).toLocaleDateString()}</small>
+                  </div>
+                  <div className="status-dot pending"></div>
+                </div>
+              ))}
+            </div>
+          </section>
         </aside>
       </main>
     </div>

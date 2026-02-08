@@ -80,6 +80,17 @@ app.post('/api/report', upload.single('image'), async (req, res) => {
   }
 });
 
+// Fetch all reports to show on the map and dashboard
+app.get('/api/reports', async (req, res) => {
+  try {
+    const result = await pool.query('SELECT * FROM civic_tickets ORDER BY created_at DESC');
+    res.json(result.rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to fetch reports" });
+  }
+});
+
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 Server running on http://localhost:${PORT}`);

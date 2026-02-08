@@ -1,110 +1,140 @@
+:root {
+  --bg-dark: #121212;
+  --panel-bg: #1a1a1a;
+  --accent: #3498db;
+  --success: #27ae60;
+  --text: #ffffff;
+  --border: #333333;
+}
+
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
 html, body, #root {
-  width: 100%; height: 100%;
-  background-color: #121212;
-  font-family: 'Inter', sans-serif;
-  color: white;
-  overflow: hidden; /* Prevent laptop double scroll */
-}
-
-.app-container {
-  display: flex;
-  flex-direction: column;
-  width: 100vw;
-  height: 100vh;
-}
-
-.app-header {
-  height: 70px;
-  background: #1a1a1a;
-  border-bottom: 1px solid #333;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  padding: 0 20px;
-  flex-shrink: 0;
-}
-
-.main-content {
-  display: flex;
-  flex: 1;
-  width: 100%;
+  height: 100%; width: 100%;
+  background-color: var(--bg-dark);
+  color: var(--text);
+  font-family: 'Inter', -apple-system, sans-serif;
   overflow: hidden;
 }
 
-/* --- LAPTOP: Fixed 75/25 Split --- */
-.map-panel {
-  position: relative !important;
-  flex: 0 0 75%;
-  height: 100%;
+.app-container { display: flex; flex-direction: column; height: 100vh; }
+
+/* HEADER SECTION */
+.app-header {
+  height: 75px;
+  background: var(--panel-bg);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 30px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
 }
 
+.logo-section { display: flex; align-items: center; gap: 12px; }
+.logo-section h1 { font-size: 24px; font-weight: 800; }
+
+.live-badge {
+  background: #e74c3c;
+  font-size: 9px;
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-weight: 900;
+}
+
+/* HEADER SEARCH */
+.search-input-wrapper { position: relative; display: flex; align-items: center; }
+.search-section input {
+  background: #252525;
+  border: 1px solid #444;
+  color: white;
+  padding: 12px 20px;
+  padding-right: 80px;
+  border-radius: 12px;
+  width: 400px;
+  font-size: 14px;
+  transition: 0.3s;
+}
+.search-section input:focus { border-color: var(--accent); background: #2a2a2a; outline: none; }
+.search-input-wrapper kbd {
+  position: absolute; right: 12px; background: #333; color: #777;
+  padding: 2px 6px; border-radius: 4px; font-size: 10px; border: 1px solid #444;
+}
+
+/* MAIN LAYOUT */
+.main-content { display: flex; flex: 1; overflow: hidden; }
+
+.map-panel { flex: 7.5; position: relative; height: 100%; background: #000; }
+.main-map { height: 100% !important; width: 100% !important; }
+
 .side-panel {
-  flex: 0 0 25%;
-  height: 100%;
-  background: #121212;
-  border-left: 1px solid #333;
-  padding: 20px;
+  flex: 2.5;
+  background: var(--panel-bg);
+  padding: 25px;
+  display: flex;
+  flex-direction: column;
+  gap: 30px;
+  border-left: 1px solid var(--border);
   overflow-y: auto;
 }
 
-.main-map { height: 100% !important; width: 100% !important; }
+/* UI ELEMENTS */
+.side-section h3 {
+  font-size: 12px;
+  color: #888;
+  text-transform: uppercase;
+  letter-spacing: 1.2px;
+  margin-bottom: 12px;
+}
 
-/* Pointer Anchor */
+.address-box {
+  background: #262626;
+  padding: 15px;
+  border-radius: 10px;
+  font-size: 13px;
+  line-height: 1.5;
+  border: 1px solid #333;
+  color: #ccc;
+}
+
+.report-form { display: flex; flex-direction: column; gap: 15px; }
+
+select {
+  background: #262626; color: white; border: 1px solid #333;
+  padding: 14px; border-radius: 10px; font-size: 14px; width: 100%;
+}
+
+.btn-capture { background: var(--accent); color: white; font-weight: 600; padding: 14px; border: none; border-radius: 10px; cursor: pointer;}
+.btn-submit { background: var(--success); color: white; font-weight: 700; padding: 14px; border: none; border-radius: 10px; cursor: pointer;}
+.btn-submit:disabled { opacity: 0.3; }
+
+.preview-wrap { position: relative; width: 100%; }
+.preview-wrap img { width: 100%; border-radius: 10px; border: 2px solid var(--accent); }
+.remove-btn {
+  position: absolute; top: 10px; right: 10px; background: #e74c3c;
+  color: white; border: none; width: 26px; height: 26px; border-radius: 50%; cursor: pointer;
+}
+
+/* RECENT ACTIVITY LIST - FIXED OVERLAP */
+.activity-list { display: flex; flex-direction: column; gap: 10px; }
+.activity-item {
+  background: #262626;
+  padding: 15px;
+  border-radius: 10px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border: 1px solid #333;
+}
+
+.item-info { display: flex; flex-direction: column; gap: 4px; }
+.item-info strong { font-size: 15px; color: #fff; }
+.item-info small { font-size: 12px; color: #666; }
+
+.status-dot { width: 10px; height: 10px; border-radius: 50%; }
+.status-dot.pending { background: #f1c40f; box-shadow: 0 0 8px rgba(241, 196, 15, 0.4); }
+
 .map-center-target {
-  position: absolute !important;
-  top: 50% !important;
-  left: 50% !important;
-  transform: translate(-50%, -50%) !important;
-  z-index: 1000;
-  pointer-events: none;
-  font-size: 35px;
+  position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+  z-index: 1000; font-size: 35px; pointer-events: none;
 }
-
-.btn-locate {
-  position: absolute;
-  bottom: 25px;
-  right: 25px;
-  z-index: 1000;
-  background: white;
-  color: #333;
-  padding: 10px 15px;
-  border-radius: 8px;
-  border: none;
-  font-weight: bold;
-}
-
-/* --- MOBILE: Vertical Stack --- */
-@media (max-width: 1024px) {
-  html, body, .app-container {
-    height: auto !important;
-    overflow-y: auto !important;
-  }
-  .main-content {
-    flex-direction: column !important;
-    height: auto !important;
-  }
-  .map-panel {
-    flex: none !important;
-    width: 100% !important;
-    height: 450px !important; /* Defined height for pointer centering */
-  }
-  .side-panel {
-    flex: none !important;
-    width: 100% !important;
-    height: auto !important;
-    border-left: none;
-    padding-bottom: 80px;
-  }
-}
-
-/* --- UI Styling --- */
-.search-box { display: flex; gap: 8px; margin-bottom: 20px; }
-.search-box input { flex: 1; padding: 12px; border-radius: 8px; background: #222; border: 1px solid #444; color: white; }
-.search-box button { background: #3498db; border: none; padding: 0 15px; border-radius: 8px; color: white; }
-.address-card { background: #1e1e1e; padding: 15px; border-radius: 12px; border-left: 4px solid #3498db; margin-bottom: 20px; }
-.form-group { display: flex; flex-direction: column; gap: 15px; }
-select, .btn-photo, .btn-submit { padding: 18px; border-radius: 10px; border: none; font-size: 16px; cursor: pointer; width: 100%; }
-.btn-submit { background: #27ae60; color: white; font-weight: bold; }
-.btn-photo { background: #34495e; color: white; }
