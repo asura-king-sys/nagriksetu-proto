@@ -104,6 +104,42 @@ app.post('/api/report/:id/vote', async (req, res) => {
   }
 });
 
+app.post('/api/report/:id/status', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { status } = req.body;
+    const result = await pool.query(
+      'UPDATE civic_tickets SET status = $1 WHERE id = $2 RETURNING *',
+      [status, id]
+    );
+    res.json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: "Update failed" });
+  }
+});
+
+// Add this to your index.js
+app.post('/api/report/:id/status', (req, res) => {
+    const { id } = req.params;
+    const { status } = req.body;
+
+    if (!status) {
+        return res.status(400).json({ error: "Status is required" });
+    }
+
+    // This updates the status and ensures 'Disputed' reports 
+    // reset the internal priority if needed
+    const sql = `UPDATE reports SET status = ? WHERE id = ?`;
+
+    db.run(sql, [status, id], function(err) {
+        if (err) {
+            console.error(err.message);
+            return res.status(500).json({ error: "Database update failed" });
+        }
+        res.json({ success: true, message: `Status updated to ${status}` });
+    });
+});
+
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 Server running on http://localhost:${PORT}`);
