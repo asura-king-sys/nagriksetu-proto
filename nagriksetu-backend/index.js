@@ -91,6 +91,19 @@ app.get('/api/reports', async (req, res) => {
   }
 });
 
+app.post('/api/report/:id/vote', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const result = await pool.query(
+      'UPDATE civic_tickets SET upvotes = upvotes + 1 WHERE id = $1 RETURNING *',
+      [id]
+    );
+    res.json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: "Voting failed" });
+  }
+});
+
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 Server running on http://localhost:${PORT}`);
