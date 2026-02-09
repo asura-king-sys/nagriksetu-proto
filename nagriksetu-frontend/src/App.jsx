@@ -1,121 +1,152 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
-import axios from 'axios';
-import 'leaflet/dist/leaflet.css';
-import './App.css';
+import React, { useState, useEffect, useRef } from "react";
+import { MapContainer, TileLayer, Marker, Popup, useMap, useMapEvents } from "react-leaflet";
+import { OpenStreetMapProvider } from "leaflet-geosearch";
+import axios from "axios";
+import L from "leaflet";
+import "leaflet/dist/leaflet.css";
+import "./App.css";
 
-import L from 'leaflet';
-import markerIcon from 'leaflet/dist/images/marker-icon.png';
-import markerShadow from 'leaflet/dist/images/marker-shadow.png';
+// Fix Leaflet Icons
+import mIcon from "leaflet/dist/images/marker-icon.png";
+import mShadow from "leaflet/dist/images/marker-shadow.png";
+let DefIcon = L.icon({ iconUrl: mIcon, shadowUrl: mShadow, iconSize: [25, 41], iconAnchor: [12, 41] });
+L.Marker.prototype.options.icon = DefIcon;
 
-const DefaultIcon = L.icon({
-  iconUrl: markerIcon, shadowUrl: markerShadow, iconSize: [25, 41], iconAnchor: [12, 41]
-});
-L.Marker.prototype.options.icon = DefaultIcon;
-
-function MapRefresher({ view }) {
-  const map = useMap();
-  useEffect(() => { setTimeout(() => map.invalidateSize(), 400); }, [view, map]);
+function LocationPicker({ setAddress }) {
+  const map = useMapEvents({
+    moveend: async () => {
+      const c = map.getCenter();
+      try {
+        const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${c.lat}&lon=${c.lng}`);
+        const data = await res.json();
+        setAddress(data.display_name || "Custom Location");
+      } catch (e) { setAddress(`${c.lat.toFixed(4)}, ${c.lng.toFixed(4)}`); }
+    },
+  });
   return null;
 }
 
 function App() {
-  const [view, setView] = useState('map'); 
+  const [view, setView] = useState("map");
   const [isAdmin, setIsAdmin] = useState(false);
-  const [category, setCategory] = useState('Pothole');
+  const [category, setCategory] = useState("Pothole");
   const [image, setImage] = useState(null);
-  const [address, setAddress] = useState("Pinpoint a location on the map...");
+  const [address, setAddress] = useState("Move map to pinpoint...");
   const [allReports, setAllReports] = useState([]);
+  const [searchQuery, setSearchQuery] = useState(""); 
   const mapRef = useRef(null);
 
-  const BACKEND_URL = "http://localhost:5000";
-
-  const fetchReports = async () => {
-    try {
-      const res = await axios.get(`${BACKEND_URL}/api/reports`);
-      setAllReports(res.data);
-    } catch (err) { console.error(err); }
-  };
+  const BACKEND = "http://localhost:5000";
+  const provider = new OpenStreetMapProvider();
 
   useEffect(() => { fetchReports(); }, []);
 
-  const updateStatus = async (id, newStatus) => {
-    try {
-      await axios.post(`${BACKEND_URL}/api/report/${id}/status`, { status: newStatus });
-      setAllReports(prev => prev.map(r => r.id === id ? { ...r, status: newStatus } : r));
-    } catch (err) { console.error("Update failed", err); }
+  const fetchReports = async () => {
+    const res = await axios.get(`${BACKEND}/api/reports`);
+    setAllReports(res.data);
   };
 
-  const handleVote = async (id) => {
+  const handleUpvote = async (id) => {
+    await axios.post(`${BACKEND}/api/report/${id}/vote`);
+    fetchReports();
+  };
+
+  const updateStatus = async (id, status) => {
+    await axios.post(`${BACKEND}/api/report/${id}/status`, { status });
+    fetchReports();
+  };
+
+  const handleSearch = async (e) => {
+    e.preventDefault();
+    const results = await provider.search({ query: searchQuery });
+    if (results.length > 0) {
+      mapRef.current.flyTo([results[0].y, results[0].x], 16);
+      setAddress(results[0].label);
+    }
+  };
+
+  const findMe = () => {
+    mapRef.current.locate().on("locationfound", (e) => {
+      mapRef.current.flyTo(e.latlng, 16);
+    });
+  };
+
+  const submitReport = async () => {
+    if (!image) return alert("Photo required!");
+    const c = mapRef.current.getCenter();
+    const fd = new FormData();
+    fd.append("category", category); fd.append("description", address);
+    fd.append("lat", c.lat); fd.append("lng", c.lng); fd.append("image", image);
+
     try {
-      await axios.post(`${BACKEND_URL}/api/report/${id}/vote`);
-      setAllReports(prev => prev.map(r => r.id === id ? { ...r, upvotes: (r.upvotes || 0) + 1 } : r));
-    } catch (err) { console.error(err); }
+      await axios.post(`${BACKEND}/api/report`, fd);
+      alert("Reported Successfully!"); setImage(null); fetchReports();
+    } catch (err) {
+      if (err.response?.status === 409) {
+        if (window.confirm("A similar issue exists nearby. Upvote it instead?")) {
+          handleUpvote(err.response.data.duplicateId);
+          setImage(null);
+        }
+      }
+    }
   };
 
   return (
     <div className="modern-app">
       <header className="glass-nav">
-        <div className="nav-left"><h1>NagrikSetu</h1></div>
-        <div className="nav-center">
-          <div className="segmented-control">
-            <button onClick={() => setView('map')} className={view === 'map' ? 'active' : ''}>Map Explorer</button>
-            <button onClick={() => setView('dashboard')} className={view === 'dashboard' ? 'active' : ''}>Insights</button>
-          </div>
-        </div>
-        <div className="nav-right">
-          <button className={`admin-pill ${isAdmin ? 'on' : ''}`} onClick={() => setIsAdmin(!isAdmin)}>
-            {isAdmin ? "Admin: ON" : "Admin Login"}
-          </button>
-        </div>
+        <h1>NagrikSetu</h1>
+        <button className={`admin-pill ${isAdmin ? "on" : ""}`} onClick={() => setIsAdmin(!isAdmin)}>
+          {isAdmin ? "Admin: Active" : "Admin Login"}
+        </button>
       </header>
 
       <div className="content-shell">
         <main className="display-core">
-          {view === 'map' ? (
+          {view === "map" ? (
             <div className="map-frame">
-              <MapContainer center={[23.2599, 77.4126]} zoom={14} ref={mapRef} style={{height:"100%", width:"100%"}}>
-                <TileLayer url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png" />
-                <MapRefresher view={view} />
+              <MapContainer center={[23.2599, 77.4126]} zoom={13} ref={mapRef} style={{ height: "100%" }}>
+                <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+                <LocationPicker setAddress={setAddress} />
                 {allReports.map(r => (
                   <Marker key={r.id} position={[r.lat, r.lng]}>
                     <Popup>
-                      <div className="p-pop">
-                        <img src={`${BACKEND_URL}/uploads/${r.image_path}`} width="100%" alt="issue" />
-                        <p><strong>{r.category}</strong></p>
-                        <button className="mini-vote-btn" onClick={() => handleVote(r.id)}>🔥 {r.upvotes || 0} Me Too</button>
-                      </div>
+                      <img src={`${BACKEND}/uploads/${r.image_path}`} width="100%" alt="issue" />
+                      <p><strong>{r.category}</strong> (🔥 {r.upvotes})</p>
                     </Popup>
                   </Marker>
                 ))}
               </MapContainer>
+              <div className="crosshair">📍</div>
+              <button className="find-me-btn" onClick={findMe} title="Find My Location">🎯</button>
             </div>
           ) : (
             <div className="dashboard-scroll">
+              <div className="dashboard-header">
+                <h2>Live Community Feed</h2>
+                <p>Tracking {allReports.length} civic issues</p>
+              </div>
               <div className="report-grid">
                 {allReports.map(r => (
-                  <div key={r.id} className={`modern-card ${r.status === 'Disputed' ? 'disputed-flare' : ''}`}>
-                    <img src={`${BACKEND_URL}/uploads/${r.image_path}`} alt="issue" />
-                    <div className="card-info">
-                      <div className="card-header-row">
-                        <span className={`status-badge ${(r.status || 'pending').toLowerCase().replace(/\s+/g, '-')}`}>{r.status || 'Pending'}</span>
-                        <span className="vote-count">🔥 {r.upvotes || 0}</span>
+                  <div key={r.id} className="modern-card">
+                    <div className="card-image-wrap">
+                      <img src={`${BACKEND}/uploads/${r.image_path}`} alt="evidence" />
+                      <span className={`status-pill ${r.status.toLowerCase().replace(" ", "-")}`}>{r.status}</span>
+                    </div>
+                    <div className="card-body">
+                      <div className="card-top">
+                        <span className="category-tag">{r.category}</span>
+                        <button onClick={() => handleUpvote(r.id)} className="vote-btn">🔥 {r.upvotes}</button>
                       </div>
-                      <h4>{r.category}</h4>
-                      <p className="card-location">📍 {r.description || "Location data unavailable"}</p>
-                      <div className="admin-actions">
-                        {isAdmin ? (
-                          <>
-                            <button className="btn-work" onClick={() => updateStatus(r.id, 'In Progress')}>Work</button>
-                            <button className="btn-fix" onClick={() => updateStatus(r.id, 'Resolved')}>Resolve</button>
-                          </>
-                        ) : (
-                          r.status === 'Resolved' ? (
-                            <button className="btn-dispute" onClick={() => updateStatus(r.id, 'Disputed')}>⚠️ False Resolve? Complain</button>
-                          ) : (
-                            <button className="btn-vote-wide" onClick={() => handleVote(r.id)}>Upvote Issue</button>
-                          )
-                        )}
+                      <h4 className="card-address">📍 {r.description}</h4>
+                      <div className="card-footer">
+                         <span className="time-stamp">{new Date(r.created_at).toLocaleDateString()}</span>
+                         {isAdmin && (
+                            <select className="status-select" value={r.status} onChange={(e) => updateStatus(r.id, e.target.value)}>
+                              <option value="Pending">Pending</option>
+                              <option value="In Progress">In Progress</option>
+                              <option value="Resolved">Resolved</option>
+                            </select>
+                         )}
                       </div>
                     </div>
                   </div>
@@ -123,30 +154,34 @@ function App() {
               </div>
             </div>
           )}
+          <div className="view-switcher">
+            <button onClick={() => setView('map')} className={view==='map'?'active':''}>Explorer</button>
+            <button onClick={() => setView('dashboard')} className={view==='dashboard'?'active':''}>Insights</button>
+          </div>
         </main>
 
         <aside className="action-sidebar">
           <div className="sidebar-group">
-            <label>📍 PINPOINT LOCATION</label>
-            <div className="info-box">{address}</div>
+            <label>🔍 SEARCH AREA</label>
+            <form onSubmit={handleSearch} className="sidebar-search">
+              <input value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} placeholder="Type a colony name..." />
+            </form>
           </div>
+          <div className="sidebar-group"><label>📍 PINNED LOCATION</label><div className="info-box">{address}</div></div>
           <div className="sidebar-group">
             <label>📝 ISSUE CATEGORY</label>
             <select className="modern-select" value={category} onChange={(e) => setCategory(e.target.value)}>
-              <option>Pothole</option>
-              <option>Garbage Pile</option>
-              <option>Water Leak</option>
-              <option>Street Light</option>
+              <option>Pothole</option><option>Garbage Pile</option><option>Water Leakage</option><option>Street Light</option>
             </select>
           </div>
           <div className="sidebar-group">
-            <label>📸 EVIDENCE</label>
+            <label>📸 UPLOAD PROOF</label>
             <div className="upload-box" onClick={() => document.getElementById('cam').click()}>
-              {image ? <img src={URL.createObjectURL(image)} /> : "Click to Upload Photo"}
+              {image ? <img src={URL.createObjectURL(image)} alt="preview" /> : "Click to Take/Select Photo"}
               <input type="file" id="cam" hidden onChange={(e) => setImage(e.target.files[0])} />
             </div>
           </div>
-          <button className="submit-btn" disabled={!image}>SUBMIT REPORT</button>
+          <button className="submit-btn" disabled={!image} onClick={submitReport}>SUBMIT REPORT</button>
         </aside>
       </div>
     </div>

@@ -13,13 +13,9 @@ const app = express();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Ensure uploads folder exists
 const uploadDir = path.join(__dirname, 'uploads');
-if (!fs.existsSync(uploadDir)) {
-  fs.mkdirSync(uploadDir);
-}
+if (!fs.existsSync(uploadDir)) { fs.mkdirSync(uploadDir); }
 
-// --- Database Connection using .env ---
 const pool = new Pool({
   user: process.env.DB_USER,
   host: process.env.DB_HOST,
@@ -28,11 +24,16 @@ const pool = new Pool({
   port: process.env.DB_PORT,
 });
 
-// Verify connection
-pool.query('SELECT NOW()', (err) => {
-  if (err) console.error('❌ DB Connection Error:', err.message);
-  else console.log('🐘 PostgreSQL Connected: Table "civic_tickets" ready.');
-});
+// Haversine formula to find distance in meters
+function getDistance(lat1, lon1, lat2, lon2) {
+    const R = 6371e3; 
+    const p1 = lat1 * Math.PI / 180;
+    const p2 = lat2 * Math.PI / 180;
+    const dp = (lat2 - lat1) * Math.PI / 180;
+    const dl = (lon2 - lon1) * Math.PI / 180;
+    const a = Math.sin(dp/2) * Math.sin(dp/2) + Math.cos(p1) * Math.cos(p2) * Math.sin(dl/2) * Math.sin(dl/2);
+    return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)));
+}
 
 app.use(cors());
 app.use(express.json());
@@ -44,103 +45,44 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage });
 
-// --- API Routes ---
-
+// API: Submit with De-duplication check
 app.post('/api/report', upload.single('image'), async (req, res) => {
   try {
-    // Note: description in the DB stores the address string from the frontend
     const { category, description, lat, lng } = req.body;
-    const image_path = req.file ? req.file.filename : null;
+    const img = req.file ? req.file.filename : null;
+    const nLat = parseFloat(lat);
+    const nLng = parseFloat(lng);
 
-    if (!image_path) {
-      return res.status(400).json({ message: "Image is required" });
+    const check = await pool.query(`SELECT id, lat, lng FROM civic_tickets WHERE category = $1 AND status != 'Resolved'`, [category]);
+    const duplicate = check.rows.find(r => getDistance(nLat, nLng, r.lat, r.lng) < 50);
+
+    if (duplicate) {
+        if (img) fs.unlinkSync(path.join(uploadDir, img));
+        return res.status(409).json({ message: "Duplicate found", duplicateId: duplicate.id });
     }
 
-    // Insert query matching your db.sql columns
-    const query = `
-      INSERT INTO civic_tickets (category, description, lat, lng, image_path)
-      VALUES ($1, $2, $3, $4, $5) RETURNING *;
-    `;
-    
-    // Convert lat/lng to numbers to match DOUBLE PRECISION in Postgres
-    const values = [category, description, parseFloat(lat), parseFloat(lng), image_path];
-    
-    const result = await pool.query(query, values);
-
-    console.log("✅ Report Logged:", result.rows[0]);
-
-    res.status(200).json({
-      message: "Success",
-      id: result.rows[0].id
-    });
-
-  } catch (error) {
-    console.error("❌ Database Error:", error.message);
-    res.status(500).json({ error: "Database insertion failed" });
-  }
+    const result = await pool.query(
+      `INSERT INTO civic_tickets (category, description, lat, lng, image_path) VALUES ($1, $2, $3, $4, $5) RETURNING *`,
+      [category, description, nLat, nLng, img]
+    );
+    res.json(result.rows[0]);
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// Fetch all reports to show on the map and dashboard
 app.get('/api/reports', async (req, res) => {
-  try {
-    const result = await pool.query('SELECT * FROM civic_tickets ORDER BY created_at DESC');
-    res.json(result.rows);
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Failed to fetch reports" });
-  }
+  const result = await pool.query('SELECT * FROM civic_tickets ORDER BY upvotes DESC, created_at DESC');
+  res.json(result.rows);
 });
 
 app.post('/api/report/:id/vote', async (req, res) => {
-  try {
-    const { id } = req.params;
-    const result = await pool.query(
-      'UPDATE civic_tickets SET upvotes = upvotes + 1 WHERE id = $1 RETURNING *',
-      [id]
-    );
-    res.json(result.rows[0]);
-  } catch (err) {
-    res.status(500).json({ error: "Voting failed" });
-  }
+  await pool.query('UPDATE civic_tickets SET upvotes = upvotes + 1 WHERE id = $1', [req.params.id]);
+  res.json({ success: true });
 });
 
 app.post('/api/report/:id/status', async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { status } = req.body;
-    const result = await pool.query(
-      'UPDATE civic_tickets SET status = $1 WHERE id = $2 RETURNING *',
-      [status, id]
-    );
-    res.json(result.rows[0]);
-  } catch (err) {
-    res.status(500).json({ error: "Update failed" });
-  }
+  const { status } = req.body;
+  await pool.query('UPDATE civic_tickets SET status = $1 WHERE id = $2', [status, req.params.id]);
+  res.json({ success: true });
 });
 
-// Add this to your index.js
-app.post('/api/report/:id/status', (req, res) => {
-    const { id } = req.params;
-    const { status } = req.body;
-
-    if (!status) {
-        return res.status(400).json({ error: "Status is required" });
-    }
-
-    // This updates the status and ensures 'Disputed' reports 
-    // reset the internal priority if needed
-    const sql = `UPDATE reports SET status = ? WHERE id = ?`;
-
-    db.run(sql, [status, id], function(err) {
-        if (err) {
-            console.error(err.message);
-            return res.status(500).json({ error: "Database update failed" });
-        }
-        res.json({ success: true, message: `Status updated to ${status}` });
-    });
-});
-
-const PORT = process.env.PORT || 5000;
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`🚀 Server running on http://localhost:${PORT}`);
-});
+app.listen(5000, () => console.log(`🚀 Server on http://localhost:5000`));
