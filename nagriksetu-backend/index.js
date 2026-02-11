@@ -9,7 +9,6 @@ import 'dotenv/config';
 
 const { Pool } = pkg;
 const app = express();
-
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -24,7 +23,6 @@ const pool = new Pool({
   port: process.env.DB_PORT,
 });
 
-// Haversine formula to find distance in meters
 function getDistance(lat1, lon1, lat2, lon2) {
     const R = 6371e3; 
     const p1 = lat1 * Math.PI / 180;
@@ -45,32 +43,40 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage });
 
-// API: Submit with De-duplication check
+// POST: Report with Re-report Counter Logic
 app.post('/api/report', upload.single('image'), async (req, res) => {
   try {
-    const { category, description, lat, lng } = req.body;
+    const { category, description, lat, lng, isReopen } = req.body;
     const img = req.file ? req.file.filename : null;
     const nLat = parseFloat(lat);
     const nLng = parseFloat(lng);
 
-    const check = await pool.query(`SELECT id, lat, lng FROM civic_tickets WHERE category = $1 AND status != 'Resolved'`, [category]);
+    // De-duplication: Only check active (non-resolved) reports
+    const check = await pool.query(
+        `SELECT id, lat, lng FROM civic_tickets WHERE category = $1 AND status != 'Resolved'`, 
+        [category]
+    );
     const duplicate = check.rows.find(r => getDistance(nLat, nLng, r.lat, r.lng) < 50);
 
     if (duplicate) {
         if (img) fs.unlinkSync(path.join(uploadDir, img));
-        return res.status(409).json({ message: "Duplicate found", duplicateId: duplicate.id });
+        return res.status(409).json({ message: "Duplicate", duplicateId: duplicate.id });
     }
 
+    // Set reopen_count to 1 if the citizen used the "Raise Issue" shortcut
+    const reopenVal = isReopen === 'true' ? 1 : 0;
+
     const result = await pool.query(
-      `INSERT INTO civic_tickets (category, description, lat, lng, image_path) VALUES ($1, $2, $3, $4, $5) RETURNING *`,
-      [category, description, nLat, nLng, img]
+      `INSERT INTO civic_tickets (category, description, lat, lng, image_path, reopen_count) 
+       VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+      [category, description, nLat, nLng, img, reopenVal]
     );
     res.json(result.rows[0]);
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 app.get('/api/reports', async (req, res) => {
-  const result = await pool.query('SELECT * FROM civic_tickets ORDER BY upvotes DESC, created_at DESC');
+  const result = await pool.query('SELECT * FROM civic_tickets ORDER BY reopen_count DESC, upvotes DESC');
   res.json(result.rows);
 });
 

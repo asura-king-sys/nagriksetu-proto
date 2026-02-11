@@ -6,11 +6,20 @@ import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import "./App.css";
 
-// Fix Leaflet Icons
+// Fix for Leaflet marker icons
 import mIcon from "leaflet/dist/images/marker-icon.png";
 import mShadow from "leaflet/dist/images/marker-shadow.png";
 let DefIcon = L.icon({ iconUrl: mIcon, shadowUrl: mShadow, iconSize: [25, 41], iconAnchor: [12, 41] });
 L.Marker.prototype.options.icon = DefIcon;
+
+// Force map to recalculate size when switching views
+function MapResizer() {
+  const map = useMap();
+  useEffect(() => {
+    setTimeout(() => { map.invalidateSize(); }, 300);
+  }, [map]);
+  return null;
+}
 
 function LocationPicker({ setAddress }) {
   const map = useMapEvents({
@@ -34,6 +43,7 @@ function App() {
   const [address, setAddress] = useState("Move map to pinpoint...");
   const [allReports, setAllReports] = useState([]);
   const [searchQuery, setSearchQuery] = useState(""); 
+  const [isReopening, setIsReopening] = useState(false);
   const mapRef = useRef(null);
 
   const BACKEND = "http://localhost:5000";
@@ -42,8 +52,10 @@ function App() {
   useEffect(() => { fetchReports(); }, []);
 
   const fetchReports = async () => {
-    const res = await axios.get(`${BACKEND}/api/reports`);
-    setAllReports(res.data);
+    try {
+      const res = await axios.get(`${BACKEND}/api/reports`);
+      setAllReports(res.data);
+    } catch (err) { console.error("API Error:", err); }
   };
 
   const handleUpvote = async (id) => {
@@ -59,31 +71,36 @@ function App() {
   const handleSearch = async (e) => {
     e.preventDefault();
     const results = await provider.search({ query: searchQuery });
-    if (results.length > 0) {
+    if (results.length > 0 && mapRef.current) {
       mapRef.current.flyTo([results[0].y, results[0].x], 16);
       setAddress(results[0].label);
     }
   };
 
   const findMe = () => {
-    mapRef.current.locate().on("locationfound", (e) => {
-      mapRef.current.flyTo(e.latlng, 16);
-    });
+    if (mapRef.current) {
+      mapRef.current.locate().on("locationfound", (e) => mapRef.current.flyTo(e.latlng, 16));
+    }
   };
 
   const submitReport = async () => {
-    if (!image) return alert("Photo required!");
+    if (!image) return alert("Upload a photo proof.");
     const c = mapRef.current.getCenter();
     const fd = new FormData();
-    fd.append("category", category); fd.append("description", address);
-    fd.append("lat", c.lat); fd.append("lng", c.lng); fd.append("image", image);
+    fd.append("category", category);
+    fd.append("description", address);
+    fd.append("lat", c.lat);
+    fd.append("lng", c.lng);
+    fd.append("image", image);
+    fd.append("isReopen", isReopening);
 
     try {
       await axios.post(`${BACKEND}/api/report`, fd);
-      alert("Reported Successfully!"); setImage(null); fetchReports();
+      alert(isReopening ? "Re-report logged!" : "Report submitted!");
+      setImage(null); setIsReopening(false); fetchReports();
     } catch (err) {
       if (err.response?.status === 409) {
-        if (window.confirm("A similar issue exists nearby. Upvote it instead?")) {
+        if (window.confirm("Similar report exists. Upvote instead?")) {
           handleUpvote(err.response.data.duplicateId);
           setImage(null);
         }
@@ -96,7 +113,7 @@ function App() {
       <header className="glass-nav">
         <h1>NagrikSetu</h1>
         <button className={`admin-pill ${isAdmin ? "on" : ""}`} onClick={() => setIsAdmin(!isAdmin)}>
-          {isAdmin ? "Admin: Active" : "Admin Login"}
+          {isAdmin ? "Admin: ON" : "Admin Login"}
         </button>
       </header>
 
@@ -104,32 +121,35 @@ function App() {
         <main className="display-core">
           {view === "map" ? (
             <div className="map-frame">
-              <MapContainer center={[23.2599, 77.4126]} zoom={13} ref={mapRef} style={{ height: "100%" }}>
+              <MapContainer center={[23.2599, 77.4126]} zoom={13} ref={mapRef} style={{ height: "100%", width: "100%" }}>
                 <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+                <MapResizer />
                 <LocationPicker setAddress={setAddress} />
                 {allReports.map(r => (
-                  <Marker key={r.id} position={[r.lat, r.lng]}>
+                  <Marker key={r.id} position={[parseFloat(r.lat), parseFloat(r.lng)]}>
                     <Popup>
-                      <img src={`${BACKEND}/uploads/${r.image_path}`} width="100%" alt="issue" />
-                      <p><strong>{r.category}</strong> (🔥 {r.upvotes})</p>
+                      <div className="popup-card">
+                        <img src={`${BACKEND}/uploads/${r.image_path}`} alt="issue" style={{width: '100%'}} />
+                        <p><strong>{r.category}</strong></p>
+                        <p>Status: {r.status}</p>
+                      </div>
                     </Popup>
                   </Marker>
                 ))}
               </MapContainer>
               <div className="crosshair">📍</div>
-              <button className="find-me-btn" onClick={findMe} title="Find My Location">🎯</button>
+              <button className="find-me-btn" onClick={findMe}>🎯</button>
             </div>
           ) : (
             <div className="dashboard-scroll">
               <div className="dashboard-header">
-                <h2>Live Community Feed</h2>
-                <p>Tracking {allReports.length} civic issues</p>
+                <h2>Live Insights</h2>
               </div>
               <div className="report-grid">
                 {allReports.map(r => (
                   <div key={r.id} className="modern-card">
                     <div className="card-image-wrap">
-                      <img src={`${BACKEND}/uploads/${r.image_path}`} alt="evidence" />
+                      <img src={`${BACKEND}/uploads/${r.image_path}`} alt="issue" />
                       <span className={`status-pill ${r.status.toLowerCase().replace(" ", "-")}`}>{r.status}</span>
                     </div>
                     <div className="card-body">
@@ -140,6 +160,15 @@ function App() {
                       <h4 className="card-address">📍 {r.description}</h4>
                       <div className="card-footer">
                          <span className="time-stamp">{new Date(r.created_at).toLocaleDateString()}</span>
+                         
+                         {r.status === 'Resolved' && !isAdmin && (
+                            <button className="reopen-btn colorful-highlight" onClick={() => {
+                                setCategory(r.category); setSearchQuery(r.description);
+                                setIsReopening(true); setView('map');
+                                setTimeout(() => mapRef.current.flyTo([r.lat, r.lng], 16), 100);
+                            }}>RAISE ISSUE 🔄</button>
+                         )}
+
                          {isAdmin && (
                             <select className="status-select" value={r.status} onChange={(e) => updateStatus(r.id, e.target.value)}>
                               <option value="Pending">Pending</option>
@@ -161,27 +190,33 @@ function App() {
         </main>
 
         <aside className="action-sidebar">
+          {isReopening && <div className="reopen-banner">⚠️ RE-REPORTING MODE</div>}
           <div className="sidebar-group">
-            <label>🔍 SEARCH AREA</label>
+            <label>🔍 SEARCH</label>
             <form onSubmit={handleSearch} className="sidebar-search">
-              <input value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} placeholder="Type a colony name..." />
+              <input value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} placeholder="Type location..." />
             </form>
           </div>
-          <div className="sidebar-group"><label>📍 PINNED LOCATION</label><div className="info-box">{address}</div></div>
           <div className="sidebar-group">
-            <label>📝 ISSUE CATEGORY</label>
+            <label>📍 PINNED LOCATION</label>
+            <div className="info-box">{address}</div>
+          </div>
+          <div className="sidebar-group">
+            <label>📝 CATEGORY</label>
             <select className="modern-select" value={category} onChange={(e) => setCategory(e.target.value)}>
-              <option>Pothole</option><option>Garbage Pile</option><option>Water Leakage</option><option>Street Light</option>
+              <option>Pothole</option><option>Garbage Pile</option><option>Water Leakage</option>
             </select>
           </div>
           <div className="sidebar-group">
-            <label>📸 UPLOAD PROOF</label>
+            <label>📸 PROOF</label>
             <div className="upload-box" onClick={() => document.getElementById('cam').click()}>
-              {image ? <img src={URL.createObjectURL(image)} alt="preview" /> : "Click to Take/Select Photo"}
+              {image ? <img src={URL.createObjectURL(image)} alt="preview" /> : "Upload Photo"}
               <input type="file" id="cam" hidden onChange={(e) => setImage(e.target.files[0])} />
             </div>
           </div>
-          <button className="submit-btn" disabled={!image} onClick={submitReport}>SUBMIT REPORT</button>
+          <button className="submit-btn" disabled={!image} onClick={submitReport}>
+            {isReopening ? "FILE RE-COMPLAINT" : "SUBMIT REPORT"}
+          </button>
         </aside>
       </div>
     </div>
